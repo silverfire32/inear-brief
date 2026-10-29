@@ -1,0 +1,1 @@
+{"description":"In-ear brief generator: timed spoken cues for lectures and public talks.","name":"inear-brief","private":true,"scripts":{"generate":"node src/generate.js","test":"node tests/test-generate.js && node tests/test-matcher.js"},"type":"module","version":"0.1.0"}

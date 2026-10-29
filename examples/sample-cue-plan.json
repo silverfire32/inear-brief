@@ -1,0 +1,145 @@
+{
+  "title": "Why Virtual Worlds Need Real Lobbies",
+  "targetSeconds": 720,
+  "paceWpm": 130,
+  "generatedBy": "local",
+  "sections": [
+    {
+      "id": "s1",
+      "heading": "Opening — the empty world problem",
+      "startSecond": 0,
+      "durationSecond": 152,
+      "wordCount": 48,
+      "anchors": [
+        "our first playtest and finding",
+        "when nothing is technically wrong"
+      ],
+      "cues": [
+        {
+          "atSecond": 0,
+          "type": "open",
+          "text": "Begin: empty world problem",
+          "optional": false
+        },
+        {
+          "atSecond": 122,
+          "type": "wrap",
+          "text": "Wrap up: empty world problem",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "heading": "What a lobby actually does",
+      "startSecond": 152,
+      "durationSecond": 189,
+      "wordCount": 60,
+      "anchors": [
+        "first room of the experience",
+        "teaches the controls without a"
+      ],
+      "cues": [
+        {
+          "atSecond": 152,
+          "type": "content",
+          "text": "Next: lobby actually does",
+          "optional": false
+        },
+        {
+          "atSecond": 303,
+          "type": "wrap",
+          "text": "Wrap up: lobby actually does",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "heading": "Lessons from our playtests",
+      "startSecond": 341,
+      "durationSecond": 114,
+      "wordCount": 36,
+      "anchors": [
+        "playtest one players spawned alone",
+        "playtest two we added a"
+      ],
+      "cues": [
+        {
+          "atSecond": 341,
+          "type": "content",
+          "text": "Next: Lessons playtests",
+          "optional": false
+        },
+        {
+          "atSecond": 432,
+          "type": "wrap",
+          "text": "Wrap up: Lessons playtests",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "heading": "Design rules we now follow",
+      "startSecond": 455,
+      "durationSecond": 148,
+      "wordCount": 47,
+      "anchors": [
+        "never spawn a player alone",
+        "object people naturally gather around"
+      ],
+      "cues": [
+        {
+          "atSecond": 455,
+          "type": "content",
+          "text": "Next: Design rules now follow",
+          "optional": false
+        },
+        {
+          "atSecond": 573,
+          "type": "wrap",
+          "text": "Wrap up: Design rules now follow",
+          "optional": true
+        },
+        {
+          "atSecond": 600,
+          "type": "time",
+          "text": "Two minutes left",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "heading": "Closing — build the doorway first",
+      "startSecond": 603,
+      "durationSecond": 117,
+      "wordCount": 37,
+      "anchors": [
+        "first ninety seconds decide everything",
+        "build the doorway first the"
+      ],
+      "cues": [
+        {
+          "atSecond": 603,
+          "type": "content",
+          "text": "Next: build doorway first",
+          "optional": false
+        },
+        {
+          "atSecond": 690,
+          "type": "close",
+          "text": "Thirty seconds — land it",
+          "optional": false
+        },
+        {
+          "atSecond": 697,
+          "type": "wrap",
+          "text": "Wrap up: build doorway first",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

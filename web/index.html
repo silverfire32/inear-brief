@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>In-Ear Brief — Runner prototype</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 44rem; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; }
+  #clock { font-size: 2.4rem; font-variant-numeric: tabular-nums; }
+  .cue { padding: .35rem .6rem; border-left: 3px solid #ccc; margin: .3rem 0; color: #555; }
+  .cue.fired { border-color: #2a9d3a; color: #111; background: #eefbef; }
+  .cue.next { border-color: #e6a100; }
+  .section { margin-top: 1.2rem; }
+  .section h3 { margin-bottom: .2rem; }
+  .current { outline: 2px solid #e6a100; border-radius: .4rem; padding: .2rem .6rem; }
+  button { font-size: 1rem; padding: .5rem 1rem; margin-right: .5rem; }
+  #notice { background: #fff7dd; border: 1px solid #e6a100; padding: .6rem; display: none; }
+  textarea { width: 100%; }
+</style>
+</head>
+<body>
+<h1>In-Ear Brief — runner prototype</h1>
+<p>Load a cue plan (or use the bundled sample), press Start, and cues are
+spoken on schedule via speech synthesis. In the real app these are
+pre-generated audio files in one earbud.</p>
+
+<p><input type="file" id="file" accept="application/json"></p>
+<div id="planInfo"></div>
+<div id="clock">0:00</div>
+<p>
+  <button id="startBtn" disabled>▶ Start talk</button>
+  <button id="advanceBtn" disabled>⏭ Advance to next section</button>
+</p>
+<p id="notice"></p>
+<div id="sections"></div>
+
+<div class="section">
+  <h3>Simulated tracking (stretch goal)</h3>
+  <p>Paste what the “speaker” just said. If an anchor phrase from a later
+  section matches, the runner re-anchors — this is what the microphone +
+  matcher will do live.</p>
+  <textarea id="heard" rows="2" placeholder="e.g. playtest one players spawned alone and churn went up"></textarea>
+  <p><button id="hearBtn" disabled>🎧 Hear this</button></p>
+</div>
+
+<script type="module">
+import { createMatcher } from "../src/matcher.js";
+
+let plan = null, matcher = null;
+let fired = new Set(), startedAt = null, offset = 0, timer = null;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function flatCues() {
+  return plan.sections.flatMap((s) => s.cues.map((c) => ({ ...c, sectionId: s.id })))
+    .sort((a, b) => a.atSecond - b.atSecond);
+}
+
+function render() {
+  $("planInfo").innerHTML = `<strong>${plan.title}</strong> — ${plan.sections.length} sections, target ${fmt(plan.targetSeconds)}`;
+  $("sections").innerHTML = plan.sections.map((s) => `
+    <div class="section" id="sec-${s.id}">
+      <h3>${s.heading} <small>(${fmt(s.startSecond)}–${fmt(s.startSecond + s.durationSecond)})</small></h3>
+      ${s.cues.map((c) => `<div class="cue" id="cue-${c.atSecond}">@${fmt(c.atSecond)} <em>${c.type}</em> — ${c.text}</div>`).join("")}
+    </div>`).join("");
+  $("startBtn").disabled = false;
+  $("hearBtn").disabled = false;
+}
+
+function speak(text) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05;
+  speechSynthesis.speak(u);
+}
+
+function elapsed() {
+  return startedAt ? offset + (performance.now() - startedAt) / 1000 : offset;
+}
+
+function currentSectionIndex(t) {
+  let idx = 0;
+  plan.sections.forEach((s, i) => { if (t >= s.startSecond) idx = i; });
+  return idx;
+}
+
+function tick() {
+  const t = elapsed();
+  $("clock").textContent = fmt(t);
+  for (const c of flatCues()) {
+    const key = `${c.sectionId}@${c.atSecond}`;
+    if (c.atSecond <= t && !fired.has(key)) {
+      fired.add(key);
+      document.getElementById(`cue-${c.atSecond}`)?.classList.add("fired");
+      speak(c.text);
+    }
+  }
+  plan.sections.forEach((s, i) => {
+    document.getElementById(`sec-${s.id}`)?.classList.toggle("current", i === currentSectionIndex(t));
+  });
+  if (t > plan.targetSeconds + 5) stop();
+}
+
+function jumpTo(second) {
+  offset = second;
+  startedAt = performance.now();
+  fired = new Set(flatCues().filter((c) => c.atSecond < second).map((c) => `${c.sectionId}@${c.atSecond}`));
+  tick();
+}
+
+function stop() {
+  clearInterval(timer);
+  timer = null;
+  $("advanceBtn").disabled = true;
+}
+
+$("startBtn").onclick = () => {
+  speechSynthesis.cancel();
+  fired = new Set();
+  offset = 0;
+  startedAt = performance.now();
+  matcher?.reset();
+  document.querySelectorAll(".cue.fired").forEach((el) => el.classList.remove("fired"));
+  clearInterval(timer);
+  timer = setInterval(tick, 250);
+  $("advanceBtn").disabled = false;
+  tick();
+};
+
+$("advanceBtn").onclick = () => {
+  const next = plan.sections[currentSectionIndex(elapsed()) + 1];
+  if (next) jumpTo(next.startSecond);
+};
+
+$("hearBtn").onclick = () => {
+  const loc = matcher.observe($("heard").value);
+  const n = $("notice");
+  if (loc.sectionIndex >= 0 && loc.sectionIndex > currentSectionIndex(elapsed())) {
+    const s = plan.sections[loc.sectionIndex];
+    n.style.display = "block";
+    n.textContent = `Anchor matched (“${loc.matchedAnchor}”, confidence ${loc.confidence.toFixed(2)}) — speaker is in “${s.heading}”. Re-anchoring the schedule.`;
+    jumpTo(s.startSecond);
+  } else if (loc.sectionIndex >= 0) {
+    n.style.display = "block";
+    n.textContent = `Anchor matched (“${loc.matchedAnchor}”) — speaker is on schedule in the current section.`;
+  } else {
+    n.style.display = "block";
+    n.textContent = "No anchor matched yet — staying on the time schedule.";
+  }
+};
+
+$("file").onchange = async (e) => {
+  plan = JSON.parse(await e.target.files[0].text());
+  matcher = createMatcher(plan);
+  render();
+};
+
+// Try the bundled sample when served over http(s).
+try {
+  const res = await fetch("../examples/sample-cue-plan.json");
+  if (res.ok) {
+    plan = await res.json();
+    matcher = createMatcher(plan);
+    render();
+  }
+} catch { /* file picker still works */ }
+</script>
+</body>
+</html>
