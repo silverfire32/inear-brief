@@ -64,7 +64,7 @@ export function validateCuePlan(plan) {
   return plan;
 }
 
-function normalizePlan(plan, paceWpm) {
+function normalizePlan(plan, paceWpm, targetMinutes) {
   const sections = [...plan.sections]
     .sort((a, b) => a.startSecond - b.startSecond)
     .map((s) => ({
@@ -74,7 +74,13 @@ function normalizePlan(plan, paceWpm) {
         .sort((a, b) => a.atSecond - b.atSecond)
         .map((c) => ({ optional: false, ...c })),
     }));
-  return { ...plan, paceWpm, generatedBy: PROVIDER_ID, sections };
+  return {
+    ...plan,
+    paceWpm,
+    targetSource: plan.targetSource || (targetMinutes > 0 ? "override" : "notes"),
+    generatedBy: PROVIDER_ID,
+    sections,
+  };
 }
 
 function extractContent(data) {
@@ -96,7 +102,7 @@ async function loadSchema() {
   return JSON.parse(raw);
 }
 
-export function buildRequestBody({ notesText, paceWpm, model, schema }) {
+export function buildRequestBody({ notesText, paceWpm, targetMinutes, model, schema }) {
   return {
     model,
     messages: [
@@ -115,8 +121,12 @@ export function buildRequestBody({ notesText, paceWpm, model, schema }) {
       {
         role: "user",
         content:
-          `Speaking pace: ${paceWpm} words per minute.\n\n` +
-          `Speaker's notes:\n\n${notesText}`,
+          `Speaking pace: ${paceWpm} words per minute.` +
+          (targetMinutes > 0
+            ? ` Target talk length: ${targetMinutes} minutes (use this even if the notes say otherwise).`
+            : " If the notes state a talk length, use it; otherwise estimate from the content.") +
+          `\n\nSpeaker's notes (any format — prose, outline, bullets — is expected; ` +
+          `do not require markdown):\n\n${notesText}`,
       },
     ],
     response_format: {
@@ -131,6 +141,7 @@ export function buildRequestBody({ notesText, paceWpm, model, schema }) {
 export async function generateCuePlan({
   notesText,
   paceWpm = 130,
+  targetMinutes,
   apiKey = resolveApiKey(),
   model = process.env.META_MODEL_ID || DEFAULT_MODEL,
   baseUrl = process.env.META_MODEL_API_BASE || DEFAULT_BASE_URL,
@@ -151,7 +162,7 @@ export async function generateCuePlan({
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildRequestBody({ notesText, paceWpm, model, schema })),
+      body: JSON.stringify(buildRequestBody({ notesText, paceWpm, targetMinutes, model, schema })),
     });
     if (!res.ok) {
       const detail = typeof res.text === "function" ? await res.text().catch(() => "") : "";
@@ -159,10 +170,10 @@ export async function generateCuePlan({
     }
     const data = await res.json();
     const plan = validateCuePlan(parsePlanJson(extractContent(data)));
-    return normalizePlan(plan, paceWpm);
+    return normalizePlan(plan, paceWpm, targetMinutes);
   } catch (err) {
     console.warn(`[meta-model] Falling back to the local provider: ${err.message}`);
     const local = await import("./local.js");
-    return local.generateCuePlan({ notesText, paceWpm });
+    return local.generateCuePlan({ notesText, paceWpm, targetMinutes });
   }
 }

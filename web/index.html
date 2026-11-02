@@ -21,13 +21,31 @@
 </head>
 <body>
 <h1>In-Ear Brief — runner prototype</h1>
-<p>Load a cue plan (or use the bundled sample), press Start, and cues play
-on schedule. If pre-generated cue audio exists (a manifest from
+<p>Start from your own notes below — any format you already have them
+in — or load a ready-made cue plan. Press Start, and cues play on
+schedule. If pre-generated cue audio exists (a manifest from
 <code>src/generate-audio.js</code>), cues play as those recordings —
 natural voice first; speech synthesis is only the fallback for any cue
 without a recording.</p>
 
-<p><input type="file" id="file" accept="application/json"></p>
+<div class="section">
+  <h3>Your notes — paste them in, any format</h3>
+  <p>Prose, a bullet outline, a numbered list, a half-finished draft —
+  no special formatting needed and nothing is uploaded: the plan is
+  built right here in the page. (In the full product this same box is
+  where the Meta Model analysis runs; the prototype analyzes locally.)</p>
+  <textarea id="notes" rows="10" placeholder="Paste your talk notes or outline here…"></textarea>
+  <p>
+    <label>Talk length (minutes, optional):
+      <input type="number" id="minutes" min="1" max="240" placeholder="auto">
+    </label>
+    <input type="file" id="notesFile" accept=".txt,.md,text/plain">
+    <button id="genBtn">✨ Make my cue plan</button>
+  </p>
+  <p id="genNote"></p>
+</div>
+
+<p>…or load a cue plan JSON: <input type="file" id="file" accept="application/json"></p>
 <div id="planInfo"></div>
 <div id="clock">0:00</div>
 <p>
@@ -48,6 +66,7 @@ without a recording.</p>
 
 <script type="module">
 import { createMatcher } from "../src/matcher.js";
+import { generateCuePlan } from "../src/providers/local.js";
 
 let plan = null, matcher = null;
 let fired = new Set(), startedAt = null, offset = 0, timer = null;
@@ -168,6 +187,38 @@ $("hearBtn").onclick = () => {
 $("file").onchange = async (e) => {
   plan = JSON.parse(await e.target.files[0].text());
   matcher = createMatcher(plan);
+  render();
+};
+
+// Paste-your-notes flow: any text in, cue plan out — no formatting
+// requirements, nothing leaves the browser.
+$("notesFile").onchange = async (e) => {
+  if (e.target.files[0]) $("notes").value = await e.target.files[0].text();
+};
+
+$("genBtn").onclick = () => {
+  const notesText = $("notes").value;
+  const mins = parseFloat($("minutes").value);
+  try {
+    plan = generateCuePlan({
+      notesText,
+      targetMinutes: mins > 0 ? mins : undefined,
+    });
+  } catch (err) {
+    $("genNote").textContent = err.message;
+    return;
+  }
+  matcher = createMatcher(plan);
+  audioByCue = new Map(); // recordings belong to the plan they were made for
+  const assumed =
+    plan.targetSource === "default"
+      ? " No length was stated, so I assumed 10 minutes — set the length above and regenerate if that's off."
+      : plan.targetSource === "estimated"
+        ? " Length estimated from your notes — set it above if you know it."
+        : "";
+  $("genNote").textContent =
+    `Plan ready: ${plan.sections.length} sections, ${fmt(plan.targetSeconds)} total.` + assumed +
+    " Press ▶ Start talk when you're ready.";
   render();
 };
 

@@ -3,6 +3,14 @@
 Hackathon scope: a working web demo + 3-minute demo video. Everything is
 ordered so each phase is demoable on its own if time runs out.
 
+**Product rule — input (Joshua, 2026-11-02):** requiring structured
+markdown is a product failure. Real users paste free-form text into a
+field, or upload an outline (bullets/numbered lists, few verbatim
+lines). All input paths — CLI file, CLI paste, web form, Meta prompt —
+accept any text; formatting is inferred, never demanded. Implemented
+in the local parser + web paste box 2026-11-02; the Meta prompt states
+the same contract.
+
 ## Phase 0 — Scaffold (done)
 
 Repo layout, cue-plan schema, sample notes, local stand-in generator,

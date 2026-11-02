@@ -40,9 +40,11 @@ same format.
 ## Layout
 
 - `src/generate.js` — notes → cue plan (provider-switched).
-- `src/providers/local.js` — deterministic stand-in: heading split,
-  word-count timing, template cues, keyword anchor extraction. Needs no
-  API key; used for development and tests.
+- `src/providers/local.js` — deterministic stand-in: format-agnostic
+  notes parsing (headings if present, else paragraphs / list blocks /
+  chunked prose), word-count timing, template cues, keyword anchor
+  extraction. Needs no API key; used for development, tests, the
+  Meta provider's fallback, and the web page's paste-a-plan box.
 - `src/providers/meta-model.js` — Meta Model API provider: the app's
   core generator. Calls Muse Spark (`https://api.meta.ai/v1` chat
   completions, structured JSON output), validates the returned plan
@@ -70,6 +72,27 @@ npm test   # generator, matcher, TTS-shape, and .env-loader checks — no key ne
 node src/generate.js examples/sample-notes.md examples/sample-cue-plan.json
 python3 -m http.server 8000   # then open http://localhost:8000/web/
 ```
+
+## Input: your notes, however you have them
+
+**No format is required — this is a product rule, not a convenience.**
+Real speakers do not write structured markdown. The generator accepts
+any plain text:
+
+- free-form prose (sections split at blank lines; one long paste is
+  chunked automatically)
+- a speech **outline**: bullet lists (`-`, `*`, `•`) or numbered
+  lists, with few or no verbatim lines
+- markdown with `#`/`##` headings, if that's what you happen to have
+- text pasted straight into the web page's notes box, or into the CLI
+  with `-` as the filename (end with Ctrl-D)
+
+Talk length comes from, in order: the web form's length field or
+`--minutes N`; a length stated anywhere in the notes ("a 15-minute
+talk", "about 8 minutes", "half an hour"); an estimate from word
+count; or — for sparse outlines — a clearly flagged 10-minute default
+(`targetSource` in the plan says which). Section headings are derived
+from the text when the notes don't have any.
 
 ## Where API keys go
 

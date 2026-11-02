@@ -1,19 +1,36 @@
 // Local stand-in provider: deterministic, no API key required.
 //
-// Splits markdown notes by "## " headings, estimates each section's
-// duration from word count at the given pace, scales sections to fit the
-// target talk length, and emits template cues plus keyword anchors.
-// Parenthetical asides are treated as stage directions (not spoken), so
+// INPUT CONTRACT (product rule, set 2026-11-02): the input is the
+// speaker's notes HOWEVER THEY HAVE THEM. Structured markdown is one
+// accepted shape, never a requirement. This parser accepts:
+//   - markdown with #, ## headings (the original sample format)
+//   - free-form prose: sections are split at blank lines, and a single
+//     long block is chunked by word count
+//   - outlines: bullet lists (-, *, •) and numbered lists (1. / 1))
+//     with few or no verbatim lines — each list block is a section
+//   - pasted text with no title and no stated length at all
+// Talk length is taken, in order, from: an explicit targetMinutes
+// argument (CLI --minutes / the web form), a duration stated anywhere
+// in the text ("Target length: 12 minutes", "a 15-minute talk",
+// "about 8 minutes", "half an hour"), an estimate from the notes' word
+// count at the speaking pace, or — for sparse outlines where that
+// estimate is meaningless — a 10-minute default the plan flags with
+// targetSource: "default" so the UI can say it assumed a length.
+// Headings for heading-less sections are derived from their first
+// words. Parenthetical asides are stage directions (not spoken), so
 // they are excluded from word counts.
 //
 // Interface shared with every provider:
-//   generateCuePlan({ notesText, paceWpm }) -> CuePlan (see schema/)
+//   generateCuePlan({ notesText, paceWpm, targetMinutes }) -> CuePlan
 
 const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for",
   "with", "is", "it", "we", "our", "you", "your", "this", "that", "was",
   "are", "be", "as", "at", "by", "from", "so", "if", "when", "what",
 ]);
+
+const DEFAULT_TARGET_SECONDS = 600; // 10 min, for sparse outlines
+const LIST_LINE = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
 function spokenWords(text) {
   const noAsides = text.replace(/\([^)]*\)/g, " ");
@@ -47,35 +64,174 @@ function anchorFrom(sentence) {
   return words.slice(start, start + 5).join(" ");
 }
 
+// Anchors for a section body: from its first sentences when possible.
+// Sparse outline lines are often too short for anchorFrom, so fall back
+// to a plain word window over the whole body — every section with a
+// handful of words still gets at least one anchor for the matcher.
+function anchorsFor(body) {
+  const found = sentences(body).slice(0, 2).map(anchorFrom).filter(Boolean);
+  if (found.length > 0) return found;
+  const words = body
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.length >= 3 ? [words.slice(0, 5).join(" ")] : [];
+}
+
 function shortCue(heading) {
   const cleaned = heading.replace(/^[^—–-]*[—–-]\s*/, "").trim() || heading;
   const words = cleaned.split(/\s+/).filter((w) => !STOPWORDS.has(w.toLowerCase()));
   return words.slice(0, 4).join(" ") || cleaned;
 }
 
-export function generateCuePlan({ notesText, paceWpm = 130 }) {
-  const lines = notesText.split(/\r?\n/);
-  let title = "Untitled talk";
-  let targetSeconds = null;
+// A talk length stated anywhere in the notes, in human phrasings.
+function statedTargetSeconds(text) {
+  const patterns = [
+    /target[^0-9]{0,20}(\d+(?:\.\d+)?)\s*(?:minutes?|mins?)\b/i,
+    /(\d+(?:\.\d+)?)\s*[-–]\s*(?:minutes?|mins?)\b/i, // "a 15-minute talk"
+    /(\d+(?:\.\d+)?)\s*(?:minutes?|mins?)\b/i,
+    /(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i,
+  ];
+  for (const [i, re] of patterns.entries()) {
+    const m = text.match(re);
+    if (m) return Math.round(parseFloat(m[1]) * (i === 3 ? 3600 : 60));
+  }
+  if (/\bhalf (?:an )?hour\b/i.test(text)) return 1800;
+  if (/\bquarter (?:of an )?hour\b/i.test(text)) return 900;
+  return null;
+}
 
-  const titleMatch = notesText.match(/^#\s+(?:Talk:\s*)?(.+)$/m);
-  if (titleMatch) title = titleMatch[1].trim();
-  const targetMatch = notesText.match(/Target length:\s*(\d+)\s*minutes?/i);
-  if (targetMatch) targetSeconds = parseInt(targetMatch[1], 10) * 60;
+// Heading for a section that has none: its first few words.
+function derivedHeading(body) {
+  const first = sentences(body)[0] || body.replace(/\s+/g, " ").trim();
+  const words = first.replace(/[.!?,;:]+$/, "").split(/\s+/).filter(Boolean);
+  return words.slice(0, 6).join(" ") || "Section";
+}
 
-  const rawSections = [];
-  let current = null;
-  for (const line of lines) {
-    const h = line.match(/^##\s+(.+)$/);
-    if (h) {
-      current = { heading: h[1].trim(), body: "" };
-      rawSections.push(current);
-    } else if (current) {
-      current.body += line + "\n";
+function splitIntoSections(text) {
+  const lines = text.split(/\r?\n/);
+
+  // Shape 1: markdown headings (#, ##, ...) — the title line, if it was
+  // a # heading, has already been removed by the caller.
+  if (lines.some((l) => /^#{1,6}\s+/.test(l))) {
+    const sections = [];
+    let current = null;
+    for (const line of lines) {
+      const h = line.match(/^#{1,6}\s+(.+)$/);
+      if (h) {
+        current = { heading: h[1].trim(), body: "" };
+        sections.push(current);
+      } else if (current) {
+        current.body += line + "\n";
+      }
+    }
+    return sections.filter((s) => spokenWords(s.body).length > 0 || s.heading);
+  }
+
+  // Shape 2: blocks separated by blank lines — prose paragraphs and
+  // list blocks (outlines) alike.
+  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  let sections = blocks.map((block) => {
+    const blockLines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const listLines = blockLines.filter((l) => LIST_LINE.test(l));
+    if (listLines.length >= Math.max(1, blockLines.length - 1)) {
+      // Outline block: items become the body, first item the heading.
+      const items = listLines.map((l) => l.replace(LIST_LINE, "").trim()).filter(Boolean);
+      return { heading: derivedHeading(items[0] || ""), body: items.join(". ") + ".", kind: "list" };
+    }
+    const body = blockLines.join(" ");
+    return { heading: derivedHeading(body), body, kind: "prose" };
+  });
+
+  // One long pasted block: chunk it by sentences into ~90-word sections.
+  if (sections.length === 1 && spokenWords(sections[0].body).length > 140) {
+    const chunks = [];
+    let chunk = [];
+    let chunkWords = 0;
+    for (const s of sentences(sections[0].body)) {
+      chunk.push(s);
+      chunkWords += spokenWords(s).length;
+      if (chunkWords >= 90) {
+        chunks.push(chunk.join(" "));
+        chunk = [];
+        chunkWords = 0;
+      }
+    }
+    if (chunk.length) chunks.push(chunk.join(" "));
+    sections = chunks.map((body) => ({ heading: derivedHeading(body), body }));
+  }
+
+  // Tiny stray fragments (e.g. a lone "A 15-minute lightning talk"
+  // line before the first bullet group) merge into what follows them.
+  // A real outline group is never merged away: once a section holds a
+  // list block, the next block starts a new section.
+  const merged = [];
+  for (const s of sections) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.kind !== "list" && spokenWords(prev.body).length < 20) {
+      prev.body += " " + s.body;
+      prev.kind = s.kind;
+    } else {
+      merged.push({ ...s });
     }
   }
+  return merged.filter((s) => spokenWords(s.body).length > 0);
+}
+
+export function generateCuePlan({ notesText, paceWpm = 130, targetMinutes } = {}) {
+  if (!notesText || !notesText.trim()) {
+    throw new Error("No notes text given — paste or write the talk notes first.");
+  }
+
+  // Title: a "# ..." line, else a short first line that doesn't read
+  // as body text (an outline's title line), else a placeholder.
+  let title = "Untitled talk";
+  let text = notesText;
+  const hashTitle = notesText.match(/^#\s+(?:Talk:\s*)?(.+)$/m);
+  if (hashTitle) {
+    title = hashTitle[1].trim();
+    text = notesText.replace(hashTitle[0], "");
+  } else {
+    const allLines = notesText.split(/\r?\n/);
+    const firstIdx = allLines.findIndex((l) => l.trim());
+    const firstLine = firstIdx >= 0 ? allLines[firstIdx] : null;
+    const moreAfter = firstLine && allLines.slice(firstIdx + 1).some((l) => l.trim());
+    if (firstLine && moreAfter) {
+      const t = firstLine.trim().replace(/^Talk:\s*/i, "");
+      // A title line is short and heading-like: not a list item, not a
+      // sentence, and at most 8 words — a wrapped first line of prose
+      // (typically 10+ words) must NOT be eaten as a title.
+      if (
+        t.length <= 90 &&
+        !/[.!?]$/.test(t) &&
+        !LIST_LINE.test(firstLine.trim()) &&
+        t.split(/\s+/).length <= 8
+      ) {
+        title = t;
+        text = notesText.replace(firstLine, "");
+      }
+    }
+  }
+
+  // Target length: explicit argument > stated in text > estimated >
+  // flagged default for sparse outlines.
+  let targetSeconds = null;
+  let targetSource = null;
+  if (targetMinutes > 0) {
+    targetSeconds = Math.round(targetMinutes * 60);
+    targetSource = "override";
+  } else {
+    const stated = statedTargetSeconds(notesText);
+    if (stated) {
+      targetSeconds = stated;
+      targetSource = "notes";
+    }
+  }
+
+  const rawSections = splitIntoSections(text);
   if (rawSections.length === 0) {
-    throw new Error("No sections found — expected at least one '## ' heading.");
+    throw new Error("Couldn't find any talk content in that text — it looks empty once formatting is removed.");
   }
 
   const raw = rawSections.map((s) => {
@@ -83,12 +239,20 @@ export function generateCuePlan({ notesText, paceWpm = 130 }) {
     return { ...s, wordCount: words, rawSeconds: (words / paceWpm) * 60 };
   });
   const rawTotal = raw.reduce((n, s) => n + s.rawSeconds, 0);
-  if (!targetSeconds) targetSeconds = Math.round(rawTotal);
+  if (!targetSeconds) {
+    if (rawTotal >= 120) {
+      targetSeconds = Math.round(rawTotal);
+      targetSource = "estimated";
+    } else {
+      targetSeconds = DEFAULT_TARGET_SECONDS;
+      targetSource = "default";
+    }
+  }
   const scale = rawTotal > 0 ? targetSeconds / rawTotal : 1;
 
   let cursor = 0;
   const sections = raw.map((s, i) => {
-    const durationSecond = Math.round(s.rawSeconds * scale);
+    const durationSecond = Math.max(5, Math.round(s.rawSeconds * scale));
     const startSecond = cursor;
     cursor += durationSecond;
     const cueWords = shortCue(s.heading);
@@ -108,14 +272,13 @@ export function generateCuePlan({ notesText, paceWpm = 130 }) {
         optional: true,
       });
     }
-    const anchors = sentences(s.body).slice(0, 2).map(anchorFrom).filter(Boolean);
     return {
       id: `s${i + 1}`,
       heading: s.heading,
       startSecond,
       durationSecond,
       wordCount: s.wordCount,
-      anchors,
+      anchors: anchorsFor(s.body),
       cues,
     };
   });
@@ -134,5 +297,5 @@ export function generateCuePlan({ notesText, paceWpm = 130 }) {
   }
   for (const s of sections) s.cues.sort((a, b) => a.atSecond - b.atSecond);
 
-  return { title, targetSeconds, paceWpm, generatedBy: "local", sections };
+  return { title, targetSeconds, targetSource, paceWpm, generatedBy: "local", sections };
 }
