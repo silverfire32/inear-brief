@@ -9,16 +9,26 @@ Repo layout, cue-plan schema, sample notes, local stand-in generator,
 anchor matcher prototype, minimal web runner. Runs end-to-end with no
 API key.
 
-## Phase 1 — Generator, real model
+## Phase 1 — Generator, real model (implemented 2026-11-02; live check pending Joshua's key)
 
-- Set up the Meta Model API key (secure entry; never in chat or in git).
-- Fill in `src/providers/meta-model.js`: prompt the model to return the
-  cue-plan JSON for given notes + target talk length.
+- Architecture, restated by Joshua 2026-11-02: the Meta Model is the
+  app's core (notes → cue-plan generation and analysis). Grok is
+  voice-only (Phase 2). The two services need two separate keys.
+- `src/providers/meta-model.js` is implemented, no longer a stub:
+  POST `https://api.meta.ai/v1/chat/completions` (Muse Spark,
+  `muse-spark-1.3` default, `META_MODEL_ID` override), structured
+  JSON output against the cue-plan schema, local validation of the
+  returned plan, and automatic fallback to the local provider on any
+  API/parse/validation failure. Mock-tested end to end.
+- Key: Meta's name is `MODEL_API_KEY` (root `.env` or shell);
+  `META_MODEL_API_KEY` is accepted as an alias. (An earlier scaffold
+  version used only the alias name — corrected 2026-11-02.)
 - Prompt goals: clean section splits from messy notes, cues of ≤ 6 words,
   2–3 distinctive anchor phrases per section (phrases the speaker will
-  actually say near the transition), flag sections that are too dense
-  for their time slot.
-- Compare model output vs. local stand-in on the sample notes; tune.
+  actually say near the transition). Remaining tuning: compare live
+  model output vs. local stand-in on the sample notes once Joshua runs
+  it with his key; a density flag for over-stuffed sections is prompt
+  guidance only until the schema grows a field for it.
 
 ## Phase 2 — Web runner + cue audio (Fix 2)
 

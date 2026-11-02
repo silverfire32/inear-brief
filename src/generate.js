@@ -23,12 +23,18 @@ if (!input || !output) {
   process.exit(1);
 }
 
-const notesText = await readFile(input, "utf8");
-const mod =
-  provider === "meta-model"
-    ? await import("./providers/meta-model.js")
-    : await import("./providers/local.js");
-const plan = await mod.generateCuePlan({ notesText, paceWpm: pace });
+let plan;
+try {
+  const notesText = await readFile(input, "utf8");
+  const mod =
+    provider === "meta-model"
+      ? await import("./providers/meta-model.js")
+      : await import("./providers/local.js");
+  plan = await mod.generateCuePlan({ notesText, paceWpm: pace });
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 await writeFile(output, JSON.stringify(plan, null, 2) + "\n");
 const cueCount = plan.sections.reduce((n, s) => n + s.cues.length, 0);

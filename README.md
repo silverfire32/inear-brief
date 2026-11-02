@@ -43,9 +43,12 @@ same format.
 - `src/providers/local.js` — deterministic stand-in: heading split,
   word-count timing, template cues, keyword anchor extraction. Needs no
   API key; used for development and tests.
-- `src/providers/meta-model.js` — Meta Model API provider stub. Same
-  interface; reads `META_MODEL_API_KEY` from the environment. Fill in the
-  request/response mapping once the key is set up.
+- `src/providers/meta-model.js` — Meta Model API provider: the app's
+  core generator. Calls Muse Spark (`https://api.meta.ai/v1` chat
+  completions, structured JSON output), validates the returned plan
+  against the schema contract, and falls back to the local provider on
+  any API failure. Reads the key from `MODEL_API_KEY` (Meta's name;
+  `META_MODEL_API_KEY` accepted as an alias).
 - `src/matcher.js` — anchor-phrase matcher: given recognized speech text,
   reports the most likely current section and a confidence score.
 - `src/tts/` — voice providers for pre-generated cue audio. `grok.js`
@@ -72,29 +75,33 @@ python3 -m http.server 8000   # then open http://localhost:8000/web/
 
 Put a file named **`.env` in the project root** — the folder that
 contains `package.json`, next to (not inside) `src/`. Copy
-`.env.example` to `.env` and fill in only the key you need:
+`.env.example` to `.env`. The app uses **two separate keys**:
 
 ```ini
-# Grok/xAI key — only for pre-generating cue audio (Fix 2)
-XAI_API_KEY=your-key-here
+# 1. The app's core — Meta Model API (notes -> cue plan / analysis).
+#    MODEL_API_KEY is Meta's own name for this key.
+MODEL_API_KEY=your-meta-key-here
 
-# Meta Model key — only for live cue-plan generation (still a stub)
-META_MODEL_API_KEY=your-key-here
+# 2. Voice only — Grok/xAI TTS, for pre-generating cue audio.
+#    A Meta key cannot call xAI, and an xAI key cannot call Meta.
+XAI_API_KEY=your-xai-key-here
 ```
 
-There is no key named `MODEL_API_KEY` in this project; that name is
-never read. The two CLIs load the root `.env` themselves (a value
-already set in your shell wins over the file). `.env` is gitignored —
-never commit it or paste a key into chat. `npm test` needs **neither**
-key: the plan generator runs locally and the Grok TTS test uses a mock
-endpoint with a fake key.
+Set whichever you have; each feature needs its own. (The Meta key is
+also read from `META_MODEL_API_KEY` as a backwards-compatible alias,
+but `MODEL_API_KEY` is the name to use.) The two CLIs load the root
+`.env` themselves (a value already set in your shell wins over the
+file). `.env` is gitignored — never commit it or paste a key into
+chat. `npm test` needs **neither** key: the generators are tested
+against local providers and mock endpoints with fake keys.
 
-With the Meta Model API:
+With the Meta Model API (live plan generation):
 
 ```sh
-# either set META_MODEL_API_KEY in the root .env (above), or:
-export META_MODEL_API_KEY=...
+# either set MODEL_API_KEY in the root .env (above), or:
+export MODEL_API_KEY=...
 node src/generate.js --provider meta-model examples/sample-notes.md out.json
+# optional: META_MODEL_ID overrides the default model (muse-spark-1.3)
 ```
 
 Pre-generate cue audio (natural voice, Fix 2):
