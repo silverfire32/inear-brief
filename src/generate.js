@@ -4,6 +4,9 @@
 // Usage:
 //   node src/generate.js [--provider local|meta-model] [--pace 130] <notes.md> <out.json>
 import { readFile, writeFile } from "node:fs/promises";
+import { loadEnv } from "./load-env.js";
+
+loadEnv();
 
 const args = process.argv.slice(2);
 let provider = "local";

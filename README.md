@@ -48,25 +48,81 @@ same format.
   request/response mapping once the key is set up.
 - `src/matcher.js` — anchor-phrase matcher: given recognized speech text,
   reports the most likely current section and a confidence score.
-- `web/` — the demo web app: loads a cue plan, runs it on schedule with
-  speech-synthesis cues, shows progress. Open `web/index.html`.
+- `src/tts/` — voice providers for pre-generated cue audio. `grok.js`
+  (xAI Grok TTS) is the first implemented provider; `index.js` is the
+  provider registry behind the bring-your-own-voice design (below).
+- `src/generate-audio.js` — cue plan → one MP3 per cue + `manifest.json`
+  (night-before step; the runner plays the files, never a live call).
+- `web/` — the demo web app: loads a cue plan, runs it on schedule,
+  playing pre-generated cue recordings when a manifest is present and
+  falling back to speech synthesis for any cue without one. Open
+  `web/index.html`.
 - `examples/` — sample talk notes and the cue plan generated from them.
 - `tests/` — runnable checks for the generator and matcher.
 
 ## Quick start (no API key needed)
 
 ```sh
-npm test   # generator + matcher checks
+npm test   # generator, matcher, TTS-shape, and .env-loader checks — no key needed
 node src/generate.js examples/sample-notes.md examples/sample-cue-plan.json
 python3 -m http.server 8000   # then open http://localhost:8000/web/
 ```
 
+## Where API keys go
+
+Put a file named **`.env` in the project root** — the folder that
+contains `package.json`, next to (not inside) `src/`. Copy
+`.env.example` to `.env` and fill in only the key you need:
+
+```ini
+# Grok/xAI key — only for pre-generating cue audio (Fix 2)
+XAI_API_KEY=your-key-here
+
+# Meta Model key — only for live cue-plan generation (still a stub)
+META_MODEL_API_KEY=your-key-here
+```
+
+There is no key named `MODEL_API_KEY` in this project; that name is
+never read. The two CLIs load the root `.env` themselves (a value
+already set in your shell wins over the file). `.env` is gitignored —
+never commit it or paste a key into chat. `npm test` needs **neither**
+key: the plan generator runs locally and the Grok TTS test uses a mock
+endpoint with a fake key.
+
 With the Meta Model API:
 
 ```sh
-export META_MODEL_API_KEY=...   # set via secure entry, never committed
+# either set META_MODEL_API_KEY in the root .env (above), or:
+export META_MODEL_API_KEY=...
 node src/generate.js --provider meta-model examples/sample-notes.md out.json
 ```
+
+Pre-generate cue audio (natural voice, Fix 2):
+
+```sh
+# either set XAI_API_KEY in the root .env (above), or:
+export XAI_API_KEY=...
+node src/generate-audio.js examples/sample-cue-plan.json examples/audio
+# options: --provider grok --voice eve|ara|rex|sal|leo --speed 0.92 --lang en
+```
+
+## Voice design
+
+Live system TTS tested too artificial for the primary user (hearing
+impairment; hearing aid is the clear endpoint, Meta Glasses mushier),
+so cues are **pre-generated recordings**, rendered when the plan is
+made — the same provider can stream live later if the tracking stretch
+goal ever needs an unplanned cue, but nothing network-dependent runs
+during a talk. Grok TTS is the first provider wired in (chosen
+2026-10-29: its voices are ones the user already understands well;
+~$15/1M chars, so a whole plan costs well under a cent).
+
+Final-product direction: a selection of decent built-in voices **or**
+letting users connect their chosen voice model. Every TTS provider
+implements one interface (`src/tts/grok.js`) and registers in
+`src/tts/index.js`, and a user's own cloned voice is just another
+`voiceId` — so adding ElevenLabs / OpenAI / Azure / Polly later, or a
+user bringing their own key and voice, is config, not a rewrite.
 
 ## Design rules
 

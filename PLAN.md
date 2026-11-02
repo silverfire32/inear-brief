@@ -20,11 +20,25 @@ API key.
   for their time slot.
 - Compare model output vs. local stand-in on the sample notes; tune.
 
-## Phase 2 — Web runner
+## Phase 2 — Web runner + cue audio (Fix 2)
 
 - Load a cue plan; big Start button (also unlocks audio on iOS Safari).
-- Plays cues on schedule via speech synthesis in the prototype;
-  pre-generated audio files for the final demo recording.
+- Voice decision (2026-10-29, from iPhone tests): system speech
+  synthesis is too artificial for the user to comprehend quickly
+  through his hearing aid (Safari offered only default voices;
+  Personal Voice is not visible to Safari; Meta Glasses audio was
+  mushier than the hearing aid). Cues are therefore pre-generated
+  recordings, with system TTS kept only as a per-cue fallback.
+- `src/tts/` implements the voice-provider interface; Grok TTS is the
+  first provider (voices eve/ara/rex/sal/leo, default speed 0.92).
+  `node src/generate-audio.js <plan.json> <out-dir>` renders one MP3
+  per cue + `manifest.json`. Runner is audio-first: it plays the
+  manifest's files when present. **Blocked only on the xAI API key**
+  (secure entry, at Joshua's computer) — pipeline and tests are done
+  and pass against a mock endpoint with no key.
+- Voice layer is provider-agnostic by design: final product offers a
+  selection of decent voices, or users connect their chosen voice
+  model/provider with their own key (registry in `src/tts/index.js`).
 - On-screen progress: current section, elapsed vs. planned, next cue.
 - Manual "advance" control for when a section ends early (cheap stand-in
   for tracking in the demo, and a permanent fallback in the real app).

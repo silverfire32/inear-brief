@@ -1,7 +1,8 @@
 // Meta Model API provider — stub with the same interface as local.js.
 //
-// Fill in once the API key is set up (secure entry; the key lives in the
-// META_MODEL_API_KEY environment variable and is never committed).
+// Fill in once the API key is set up (the key is read from the
+// META_MODEL_API_KEY environment variable; the CLI also loads it from
+// a gitignored .env file in the project root — never commit a key).
 //
 // What the live implementation should do:
 //   1. POST the notes to the Meta Model API (see dev.meta.ai) with a

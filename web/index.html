@@ -21,9 +21,11 @@
 </head>
 <body>
 <h1>In-Ear Brief — runner prototype</h1>
-<p>Load a cue plan (or use the bundled sample), press Start, and cues are
-spoken on schedule via speech synthesis. In the real app these are
-pre-generated audio files in one earbud.</p>
+<p>Load a cue plan (or use the bundled sample), press Start, and cues play
+on schedule. If pre-generated cue audio exists (a manifest from
+<code>src/generate-audio.js</code>), cues play as those recordings —
+natural voice first; speech synthesis is only the fallback for any cue
+without a recording.</p>
 
 <p><input type="file" id="file" accept="application/json"></p>
 <div id="planInfo"></div>
@@ -71,8 +73,21 @@ function render() {
 
 function speak(text) {
   const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1.05;
+  u.rate = 0.92;
   speechSynthesis.speak(u);
+}
+
+// Pre-generated audio (Fix 2): manifest written by src/generate-audio.js,
+// keyed by cue time + text. A cue with a recording plays the file; a cue
+// without one falls back to speech synthesis above.
+let audioByCue = new Map();
+const cueKey = (atSecond, text) => `${atSecond}|${text}`;
+
+function playCue(cue) {
+  const file = audioByCue.get(cueKey(cue.atSecond, cue.text));
+  if (!file) return speak(cue.text);
+  const audio = new Audio(`../examples/audio/${file}`);
+  audio.play().catch(() => speak(cue.text));
 }
 
 function elapsed() {
@@ -93,7 +108,7 @@ function tick() {
     if (c.atSecond <= t && !fired.has(key)) {
       fired.add(key);
       document.getElementById(`cue-${c.atSecond}`)?.classList.add("fired");
-      speak(c.text);
+      playCue(c);
     }
   }
   plan.sections.forEach((s, i) => {
@@ -165,6 +180,15 @@ try {
     render();
   }
 } catch { /* file picker still works */ }
+
+// Optional: pre-generated cue audio for the bundled sample, if present.
+try {
+  const res = await fetch("../examples/audio/manifest.json");
+  if (res.ok) {
+    const manifest = await res.json();
+    audioByCue = new Map(manifest.cues.map((c) => [cueKey(c.atSecond, c.text), c.file]));
+  }
+} catch { /* no recordings yet — speech synthesis fallback covers every cue */ }
 </script>
 </body>
 </html>
