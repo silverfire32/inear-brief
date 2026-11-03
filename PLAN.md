@@ -11,6 +11,16 @@ accept any text; formatting is inferred, never demanded. Implemented
 in the local parser + web paste box 2026-11-02; the Meta prompt states
 the same contract.
 
+**Product rule — delivery (Joshua, 2026-11-03):** cues prefer to land
+in a pause in the speaker's own speech rather than talking over them,
+so the competing-audio problem mostly disappears. Implemented
+2026-11-03 as `src/delivery.js`, a pause-aware gate between the
+schedule and playback: due cues hold for a pause of ≥ 0.7s, bounded at
+4s (1.5s for time/close cues) after which required cues play anyway;
+optional cues are dropped rather than forced. The web runner feeds it
+from the simulated-tracking panel today; a microphone VAD/recognition
+feed replaces the simulation in the real listening build.
+
 ## Phase 0 — Scaffold (done)
 
 Repo layout, cue-plan schema, sample notes, local stand-in generator,

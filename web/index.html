@@ -10,12 +10,15 @@
   #clock { font-size: 2.4rem; font-variant-numeric: tabular-nums; }
   .cue { padding: .35rem .6rem; border-left: 3px solid #ccc; margin: .3rem 0; color: #555; }
   .cue.fired { border-color: #2a9d3a; color: #111; background: #eefbef; }
+  .cue.queued { border-color: #e6a100; background: #fff7dd; color: #111; }
+  .cue.dropped { opacity: .45; text-decoration: line-through; }
   .cue.next { border-color: #e6a100; }
   .section { margin-top: 1.2rem; }
   .section h3 { margin-bottom: .2rem; }
   .current { outline: 2px solid #e6a100; border-radius: .4rem; padding: .2rem .6rem; }
   button { font-size: 1rem; padding: .5rem 1rem; margin-right: .5rem; }
   #notice { background: #fff7dd; border: 1px solid #e6a100; padding: .6rem; display: none; }
+  #deliveryNote { background: #eef4ff; border: 1px solid #7aa2e6; padding: .6rem; display: none; }
   textarea { width: 100%; }
 </style>
 </head>
@@ -53,6 +56,7 @@ without a recording.</p>
   <button id="advanceBtn" disabled>⏭ Advance to next section</button>
 </p>
 <p id="notice"></p>
+<p id="deliveryNote"></p>
 <div id="sections"></div>
 
 <div class="section">
@@ -62,6 +66,17 @@ without a recording.</p>
   matcher will do live.</p>
   <textarea id="heard" rows="2" placeholder="e.g. playtest one players spawned alone and churn went up"></textarea>
   <p><button id="hearBtn" disabled>🎧 Hear this</button></p>
+  <h3>Pause-aware delivery</h3>
+  <p>Cues prefer to land in a <strong>pause</strong> in the speaker's
+  speech rather than talking over them: a cue that comes due while the
+  speaker is talking waits for a real pause (up to 4 seconds; 1.5s for
+  time warnings), then plays anyway if none comes. Optional cues are
+  skipped rather than forced. Simulate the speaker's voice here:
+  <span id="speechState">speaker silent</span>.</p>
+  <p>
+    <button id="talkBtn">🗣 Speaker is talking</button>
+    <button id="pauseBtn">🤫 Speaker pauses</button>
+  </p>
 </div>
 
 <script>
@@ -76,8 +91,10 @@ setTimeout(() => {
 <script type="module">
 import { createMatcher } from "../src/matcher.js";
 import { generateCuePlan } from "../src/providers/local.js";
+import { createCueGate } from "../src/delivery.js";
 
 let plan = null, matcher = null;
+let gate = createCueGate(); // pause-aware delivery: cues wait for a gap
 let fired = new Set(), startedAt = null, offset = 0, timer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -128,16 +145,41 @@ function currentSectionIndex(t) {
   return idx;
 }
 
+function deliverySay(text) {
+  const n = $("deliveryNote");
+  n.style.display = "block";
+  n.textContent = text;
+}
+
 function tick() {
   const t = elapsed();
   $("clock").textContent = fmt(t);
+  // Due cues enter the pause-aware gate instead of playing blindly.
   for (const c of flatCues()) {
     const key = `${c.sectionId}@${c.atSecond}`;
     if (c.atSecond <= t && !fired.has(key)) {
       fired.add(key);
-      document.getElementById(`cue-${c.atSecond}`)?.classList.add("fired");
-      playCue(c);
+      gate.offer(c, t);
+      document.getElementById(`cue-${c.atSecond}`)?.classList.add("queued");
     }
+  }
+  const { play, dropped } = gate.poll(t);
+  for (const p of play) {
+    const el = document.getElementById(`cue-${p.cue.atSecond}`);
+    el?.classList.remove("queued");
+    el?.classList.add("fired");
+    playCue(p.cue);
+    if (p.forced) {
+      deliverySay(`⚠ No pause in time — “${p.cue.text}” played over speech after waiting ${p.heldSec.toFixed(1)}s.`);
+    } else if (p.heldSec >= 0.25) {
+      deliverySay(`⏸ “${p.cue.text}” waited ${p.heldSec.toFixed(1)}s for a pause and played in the gap.`);
+    }
+  }
+  for (const d of dropped) {
+    const el = document.getElementById(`cue-${d.cue.atSecond}`);
+    el?.classList.remove("queued");
+    el?.classList.add("dropped");
+    deliverySay(`Optional cue “${d.cue.text}” skipped — no pause in its window, and it won't talk over the speaker.`);
   }
   plan.sections.forEach((s, i) => {
     document.getElementById(`sec-${s.id}`)?.classList.toggle("current", i === currentSectionIndex(t));
@@ -148,6 +190,7 @@ function tick() {
 function jumpTo(second) {
   offset = second;
   startedAt = performance.now();
+  gate.reset(); // held cues belong to the old position in the talk
   fired = new Set(flatCues().filter((c) => c.atSecond < second).map((c) => `${c.sectionId}@${c.atSecond}`));
   tick();
 }
@@ -164,7 +207,9 @@ $("startBtn").onclick = () => {
   offset = 0;
   startedAt = performance.now();
   matcher?.reset();
-  document.querySelectorAll(".cue.fired").forEach((el) => el.classList.remove("fired"));
+  gate.reset();
+  $("deliveryNote").style.display = "none";
+  document.querySelectorAll(".cue.fired, .cue.queued, .cue.dropped").forEach((el) => el.classList.remove("fired", "queued", "dropped"));
   clearInterval(timer);
   timer = setInterval(tick, 250);
   $("advanceBtn").disabled = false;
@@ -177,7 +222,15 @@ $("advanceBtn").onclick = () => {
 };
 
 $("hearBtn").onclick = () => {
-  const loc = matcher.observe($("heard").value);
+  // Heard speech is also speech activity for the delivery gate: the
+  // pasted words were being spoken up until now, at the plan's pace.
+  const heardText = $("heard").value;
+  const words = heardText.split(/\s+/).filter(Boolean).length;
+  if (words > 0) {
+    const dur = (words / (plan.paceWpm || 130)) * 60;
+    gate.noteSpeech({ atSec: Math.max(0, elapsed() - dur), durationSec: dur });
+  }
+  const loc = matcher.observe(heardText);
   const n = $("notice");
   if (loc.sectionIndex >= 0 && loc.sectionIndex > currentSectionIndex(elapsed())) {
     const s = plan.sections[loc.sectionIndex];
@@ -193,9 +246,20 @@ $("hearBtn").onclick = () => {
   }
 };
 
+// Simulated voice activity for pause-aware delivery.
+$("talkBtn").onclick = () => {
+  gate.noteSpeechStart(elapsed());
+  $("speechState").textContent = "speaker talking…";
+};
+$("pauseBtn").onclick = () => {
+  gate.noteSpeechEnd(elapsed());
+  $("speechState").textContent = "speaker paused";
+};
+
 $("file").onchange = async (e) => {
   plan = JSON.parse(await e.target.files[0].text());
   matcher = createMatcher(plan);
+  gate.reset();
   render();
 };
 
@@ -218,6 +282,7 @@ $("genBtn").onclick = () => {
     return;
   }
   matcher = createMatcher(plan);
+  gate.reset();
   audioByCue = new Map(); // recordings belong to the plan they were made for
   const assumed =
     plan.targetSource === "default"

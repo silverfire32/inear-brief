@@ -53,6 +53,11 @@ same format.
   `META_MODEL_API_KEY` accepted as an alias).
 - `src/matcher.js` — anchor-phrase matcher: given recognized speech text,
   reports the most likely current section and a confidence score.
+- `src/delivery.js` — pause-aware cue gate: due cues wait for a genuine
+  pause in the speaker's speech (≥ 0.7s silence) instead of talking over
+  them — bounded at 4s (1.5s for time/close cues), after which required
+  cues play anyway and optional cues are dropped. The runner feeds it
+  speech activity; every cue plays through it, never around it.
 - `src/tts/` — voice providers for pre-generated cue audio. `grok.js`
   (xAI Grok TTS) is the first implemented provider; `index.js` is the
   provider registry behind the bring-your-own-voice design (below).

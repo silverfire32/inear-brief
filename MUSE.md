@@ -41,23 +41,30 @@ video. Native iOS/Android is post-hackathon scope.
    by a user with hearing impairment. Hearing aid is the primary audio
    endpoint (tested clearer than Meta Glasses). Grok voice default:
    Eve at speed 0.92 — chosen because Joshua can understand Grok voices.
-3. **Never print, log, or commit API keys.** `.env` stays gitignored.
+3. **Cues prefer pauses.** Delivery goes through the pause-aware gate
+   (`src/delivery.js`): a due cue waits for a genuine pause in the
+   speaker's speech (≥ 0.7s of silence), bounded at 4s — 1.5s for
+   time/close cues — after which required cues play anyway; optional
+   cues are dropped rather than forced over speech. Never bypass the
+   gate to play a cue directly on schedule.
+4. **Never print, log, or commit API keys.** `.env` stays gitignored.
    If a command would echo a key, stop and say so instead.
 
 ## Current state (2026-11-02)
 
 - Implemented and tested: local generator (any-format input), Meta
   provider (mock-tested end to end), Grok TTS provider (mock-tested),
-  anchor-phrase matcher prototype, web runner with paste box and
-  audio-first playback with speech-synthesis fallback.
-- `npm test` runs five suites and must stay green.
-- **Not yet verified**: the live Meta call with Joshua's real key
-  (`node src/generate.js --provider meta-model <notes> <out.json>`
-  should end with `(provider: meta-model)`). This is the next step.
+  anchor-phrase matcher prototype (incl. fuzzy word matching),
+  pause-aware cue delivery gate (`src/delivery.js`), web runner with
+  paste box and audio-first playback with speech-synthesis fallback.
+- `npm test` runs six suites and must stay green.
+- **Verified live (2026-11-03)**: the Meta call with Joshua's real key
+  and his own notes, end to end on his machine.
 - **Not yet done**: no Grok audio generated (needs `XAI_API_KEY` +
   `node src/generate-audio.js examples/sample-cue-plan.json examples/audio`);
-  live microphone anchor tracking (the web runner's tracking panel is a
-  simulation); other TTS providers beyond the registry stub.
+  live microphone anchor tracking (the web runner's tracking panel and
+  its speech-activity feed are simulations); other TTS providers
+  beyond the registry stub.
 
 ## Working agreements
 
