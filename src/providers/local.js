@@ -27,10 +27,46 @@ const STOPWORDS = new Set([
   "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for",
   "with", "is", "it", "we", "our", "you", "your", "this", "that", "was",
   "are", "be", "as", "at", "by", "from", "so", "if", "when", "what",
+  "between",
 ]);
 
 const DEFAULT_TARGET_SECONDS = 600; // 10 min, for sparse outlines
 const LIST_LINE = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+// Speaker meta-discourse (staging notes to self, not talk content): a
+// lead-in line promising topics ("I need to cover:") and instruction-only
+// blocks ("Don't spend…", "Take time…", "Make sure…"). Lead-ins flag the
+// next block as a topic list; instructions are pacing notes and never
+// become sections, headings, cues, or anchors.
+const LEAD_IN_LINE_RE = /^\s*(i (need|want) to (cover|discuss|talk about|go over)|let'?s (cover|go over))\s*:?\s*$/i;
+const DIRECTIVE_BLOCK_RE = /don'?t spend|take time on|make sure to|keep it brief|spend (too much|more|less) time/i;
+const META_ANCHOR_RE = /(^|\b)(to cover|i need|we need|convincers|deepeners|make sure|don'?t spend|take time|keep it brief)\b/i;
+
+function stripMetaPrefix(text) {
+  return text
+    .replace(/^\s*(i|we)\s+(need|want)\s+to\s+(have|cover|discuss|talk\s+about|go\s+over)\b\s*:?\s*/i, "")
+    .replace(/^\s*let'?s\s+(cover|go\s+over)\b\s*:?\s*/i, "")
+    .trim();
+}
+
+function stripMetaLines(body) {
+  const kept = body.split(/\r?\n/).filter((l) => !LEAD_IN_LINE_RE.test(l));
+  return kept.join("\n").trim();
+}
+
+// A topic line offering an alternative ("X, maybe Y") is two demos to
+// run: one definite, one tentative. Tentative sections get Maybe-prefixed
+// cues and an optional opening cue so the speaker hears the optionality.
+function splitAlternatives(line) {
+  const m = line.match(/^(.*?)(?:,|;)\s*maybe\s+(.*)$/i);
+  if (m && spokenWords(m[1]).length >= 3 && spokenWords(m[2]).length >= 3) {
+    return [
+      { body: m[1].trim(), maybe: false },
+      { body: m[2].replace(/^(of|about|on)\s+/i, "").trim(), maybe: true },
+    ];
+  }
+  return [{ body: line, maybe: false }];
+}
 
 function spokenWords(text) {
   const noAsides = text.replace(/\([^)]*\)/g, " ");
@@ -61,7 +97,10 @@ function anchorFrom(sentence) {
   });
   if (best < 0) return null;
   const start = Math.max(0, Math.min(best - 2, words.length - 5));
-  return words.slice(start, start + 5).join(" ");
+  const window = words.slice(start, start + 5);
+  while (window.length > 2 && STOPWORDS.has(window[0])) window.shift();
+  while (window.length > 2 && STOPWORDS.has(window[window.length - 1])) window.pop();
+  return window.join(" ");
 }
 
 // Anchors for a section body: from its first sentences when possible.
@@ -69,9 +108,10 @@ function anchorFrom(sentence) {
 // to a plain word window over the whole body — every section with a
 // handful of words still gets at least one anchor for the matcher.
 function anchorsFor(body) {
-  const found = sentences(body).slice(0, 2).map(anchorFrom).filter(Boolean);
+  const cleanedBody = stripMetaLines(body);
+  const found = sentences(cleanedBody).slice(0, 2).map((s) => anchorFrom(stripMetaPrefix(s) || s)).filter(Boolean).filter((a) => !META_ANCHOR_RE.test(a));
   if (found.length > 0) return found;
-  const words = body
+  const words = cleanedBody
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s-]/gu, "")
     .split(/\s+/)
@@ -80,6 +120,11 @@ function anchorsFor(body) {
 }
 
 function shortCue(heading) {
+  heading = stripMetaPrefix(heading) || heading;
+  const question = heading.trim().match(/^.{1,80}\?\s*$/);
+  if (question && heading.trim().split(/\s+/).length <= 8) {
+    return heading.trim().replace(/^([a-z])/, (c) => c.toUpperCase());
+  }
   const cleaned = heading.replace(/^[^—–-]*[—–-]\s*/, "").trim() || heading;
   const words = cleaned.split(/\s+/).filter((w) => !STOPWORDS.has(w.toLowerCase()));
   return words.slice(0, 4).join(" ") || cleaned;
@@ -104,8 +149,9 @@ function statedTargetSeconds(text) {
 
 // Heading for a section that has none: its first few words.
 function derivedHeading(body) {
-  const first = sentences(body)[0] || body.replace(/\s+/g, " ").trim();
-  const words = first.replace(/[.!?,;:]+$/, "").split(/\s+/).filter(Boolean);
+  const firstRaw = sentences(body)[0] || body.replace(/\s+/g, " ").trim();
+  const first = stripMetaPrefix(firstRaw) || firstRaw;
+  const words = first.replace(/[.,;:]+$/, "").split(/\s+/).filter(Boolean);
   return words.slice(0, 6).join(" ") || "Section";
 }
 
@@ -131,8 +177,25 @@ function splitIntoSections(text) {
 
   // Shape 2: blocks separated by blank lines — prose paragraphs and
   // list blocks (outlines) alike.
-  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  let sections = blocks.map((block) => {
+  const rawBlocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  // Drop speaker meta-discourse blocks: a lead-in-only block flags the
+  // next block as a topic list; instruction-only blocks are pacing notes.
+  let topicListNext = false;
+  const blocks = [];
+  const topicListBlocks = new Set();
+  for (const b of rawBlocks) {
+    const blines = b.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const kept = blines.filter((l) => !LEAD_IN_LINE_RE.test(l));
+    if (kept.length < blines.length) topicListNext = true;
+    const rest = kept.join("\n").trim();
+    if (!rest) continue;
+    const isDirective = DIRECTIVE_BLOCK_RE.test(rest) && spokenWords(rest).length <= 40 && !rest.includes("?");
+    if (topicListNext && !isDirective) topicListBlocks.add(blocks.length);
+    topicListNext = false;
+    if (isDirective) continue;
+    blocks.push(rest);
+  }
+  let sections = blocks.map((block, bi) => {
     const blockLines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const listLines = blockLines.filter((l) => LIST_LINE.test(l));
     if (listLines.length >= Math.max(1, blockLines.length - 1)) {
@@ -141,11 +204,14 @@ function splitIntoSections(text) {
       return { heading: derivedHeading(items[0] || ""), body: items.join(". ") + ".", kind: "list" };
     }
     const body = blockLines.join(" ");
+    if (topicListBlocks.has(bi) && blockLines.length >= 2) {
+      return { heading: "", body, kind: "topics", lines: blockLines };
+    }
     return { heading: derivedHeading(body), body, kind: "prose" };
   });
 
   // One long pasted block: chunk it by sentences into ~90-word sections.
-  if (sections.length === 1 && spokenWords(sections[0].body).length > 140) {
+  if (sections.length === 1 && sections[0].kind !== "topics" && spokenWords(sections[0].body).length > 140) {
     const chunks = [];
     let chunk = [];
     let chunkWords = 0;
@@ -166,10 +232,20 @@ function splitIntoSections(text) {
   // line before the first bullet group) merge into what follows them.
   // A real outline group is never merged away: once a section holds a
   // list block, the next block starts a new section.
+  // A topic-list block (after a "cover:"-style lead-in) becomes one
+  // section per line — each line is a topic, not a paragraph.
+  sections = sections.flatMap((s) => {
+    if (s.kind !== "topics") return [s];
+    return s.lines
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .flatMap((line) => splitAlternatives(line))
+      .map(({ body, maybe }) => ({ heading: derivedHeading(body), body: /[.!?]$/.test(body) ? body : body + ".", kind: "topic", maybe }));
+  });
   const merged = [];
   for (const s of sections) {
     const prev = merged[merged.length - 1];
-    if (prev && prev.kind !== "list" && spokenWords(prev.body).length < 20) {
+    if (prev && prev.kind !== "list" && prev.kind !== "topic" && s.kind !== "topic" && spokenWords(prev.body).length < 20) {
       prev.body += " " + s.body;
       prev.kind = s.kind;
     } else {
@@ -260,8 +336,8 @@ export function generateCuePlan({ notesText, paceWpm = 130, targetMinutes } = {}
       {
         atSecond: startSecond,
         type: i === 0 ? "open" : "content",
-        text: i === 0 ? `Begin: ${cueWords}` : `Next: ${cueWords}`,
-        optional: false,
+        text: /\?$/.test(cueWords) ? cueWords : (s.maybe ? `Maybe: ${cueWords}` : (i === 0 ? `Begin: ${cueWords}` : `Next: ${cueWords}`)),
+        optional: s.maybe === true,
       },
     ];
     if (durationSecond >= 45) {

@@ -2,3 +2,8 @@ node_modules/
 .env
 *.key
 .DS_Store
+# Personal scratch: real talk notes and generated plans stay local.
+test-notes.txt
+my-notes.txt
+my-plan.json
+test-plan.json

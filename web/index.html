@@ -64,6 +64,15 @@ without a recording.</p>
   <p><button id="hearBtn" disabled>🎧 Hear this</button></p>
 </div>
 
+<script>
+window.__inearReady = false;
+setTimeout(() => {
+  if (window.__inearReady) return;
+  const n = document.getElementById("notice");
+  n.style.display = "block";
+  n.textContent = "The runner didn't start — browsers block its code when this file is opened directly (double-click). Serve the project instead: in the project folder run `python -m http.server 8000` (or `python3 -m http.server 8000`), then open http://localhost:8000/web/ .";
+}, 2500);
+</script>
 <script type="module">
 import { createMatcher } from "../src/matcher.js";
 import { generateCuePlan } from "../src/providers/local.js";
@@ -240,6 +249,8 @@ try {
     audioByCue = new Map(manifest.cues.map((c) => [cueKey(c.atSecond, c.text), c.file]));
   }
 } catch { /* no recordings yet — speech synthesis fallback covers every cue */ }
+
+window.__inearReady = true;
 </script>
 </body>
 </html>

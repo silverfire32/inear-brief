@@ -26,19 +26,75 @@ function normalize(text) {
 // of the anchor in order, allowing each word a small lookahead. A word
 // lost to recognition noise is skipped rather than fatal, which is what
 // makes the matcher tolerant of STT errors and ad-libs.
+// Fuzzy word equivalence: live speech rarely reproduces an anchor
+// letter-for-letter ("demo" vs "demonstrate", plurals, STT typos), so
+// words match when one extends the other or they look alike. Short words
+// (a, to, of) must still match exactly — they're too easy to collide.
+function jaro(a, b) {
+  if (a === b) return 1;
+  const la = a.length;
+  const lb = b.length;
+  if (!la || !lb) return 0;
+  const window = Math.floor(Math.max(la, lb) / 2) - 1;
+  const aMatch = new Array(la).fill(false);
+  const bMatch = new Array(lb).fill(false);
+  let matches = 0;
+  for (let i = 0; i < la; i++) {
+    const lo = Math.max(0, i - window);
+    const hi = Math.min(lb - 1, i + window);
+    for (let j = lo; j <= hi; j++) {
+      if (!bMatch[j] && a[i] === b[j]) {
+        aMatch[i] = true;
+        bMatch[j] = true;
+        matches++;
+        break;
+      }
+    }
+  }
+  if (!matches) return 0;
+  let t = 0;
+  let k = 0;
+  for (let i = 0; i < la; i++) {
+    if (!aMatch[i]) continue;
+    while (!bMatch[k]) k++;
+    if (a[i] !== b[k]) t++;
+    k++;
+  }
+  t /= 2;
+  return (matches / la + matches / lb + (matches - t) / matches) / 3;
+}
+
+function jaroWinkler(a, b) {
+  const j = jaro(a, b);
+  let prefix = 0;
+  const maxPrefix = Math.min(4, a.length, b.length);
+  for (let i = 0; i < maxPrefix; i++) {
+    if (a[i] === b[i]) prefix++;
+    else break;
+  }
+  return j + prefix * 0.1 * (1 - j);
+}
+
+function wordEq(a, b) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4) return false;
+  if (a.startsWith(b) || b.startsWith(a)) return true;
+  return jaroWinkler(a, b) >= 0.85;
+}
+
 const LOOKAHEAD = 4;
 
 function orderedMatchRatio(anchorWords, windowWords) {
   if (anchorWords.length === 0) return 0;
   let best = 0;
   for (let start = 0; start < windowWords.length; start += 1) {
-    if (windowWords[start] !== anchorWords[0]) continue;
+    if (!wordEq(windowWords[start], anchorWords[0])) continue;
     let wi = start + 1;
     let matched = 1;
     for (let ai = 1; ai < anchorWords.length; ai += 1) {
       const limit = Math.min(wi + LOOKAHEAD, windowWords.length);
       for (let k = wi; k < limit; k += 1) {
-        if (windowWords[k] === anchorWords[ai]) {
+        if (wordEq(windowWords[k], anchorWords[ai])) {
           matched += 1;
           wi = k + 1;
           break;

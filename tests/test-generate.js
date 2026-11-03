@@ -97,6 +97,61 @@ const blobPlan = generateCuePlan({ notesText: blob, paceWpm: 130 });
 assert.ok(blobPlan.sections.length >= 2, "a single long block should chunk into sections");
 
 // Empty input is a clear, human error — not a formatting complaint.
+// Freeform notes with speaker meta-discourse (hypnosis talk): a
+// "I need to cover:" preamble and trailing stage directions must not
+// become headings, cues, or anchors.
+const metaTalk = `6 minute talk on hypnosis and pain
+
+I need to cover:
+
+what is hypnosis?
+What (and where) is pain? Is it in the head? In the body?
+Difference between chronic and acute pain
+How does pain get regulated? Brain processes: amygdala, PTA cycle, gate theory
+How do people deal with pain normally? Distraction, meds (with side effects), pleasure-seeking (extreme distraction/self-medication)
+How hypnosis helps
+I need to have a demo of glove anesthesia, maybe of making nose itches as a nocebo version (think Overdurf Training Trances book)
+Hypnosis manages attention, soothes parasympathetic nervous system, lowers cortisol
+Hypnotic paralysis brain study shows brain starts to send signal to lift arm, but then other part of brain interrupts and "steals" the signal. Pain control works similarly
+Close with Q&A
+
+Don't spend too much time on what is hypnosis: keep it brief
+Take time on the demo and make sure to include convincers and deepeners`;
+const metaPlan = generateCuePlan({ notesText: metaTalk, paceWpm: 130 });
+const metaHeadings = metaPlan.sections.map((s) => s.heading);
+assert.ok(metaHeadings.length >= 4, `topic lines should become their own sections (got ${metaHeadings.length})`);
+assert.ok(
+  metaHeadings[0].toLowerCase().includes("hypnosis"),
+  `first section should be the hypnosis topic (got "${metaHeadings[0]}")`
+);
+for (const h of metaHeadings) {
+  assert.ok(
+    !/^(i need to cover|don't spend|take time)/i.test(h),
+    `speaker meta-discourse must not be a heading (got "${h}")`
+  );
+}
+const metaOpen = metaPlan.sections[0].cues.find((c) => c.type === "open");
+assert.ok(
+  metaOpen && /hypnosis/i.test(metaOpen.text) && !/need|cover/i.test(metaOpen.text),
+  `opening cue should name the topic, not the preamble (got "${metaOpen?.text}")`
+);
+for (const s of metaPlan.sections) {
+  for (const a of s.anchors) {
+    assert.ok(
+      !/to cover|convincers|deepeners|make sure|don't spend|take time/i.test(a),
+      `anchor must be something the speaker actually says (got "${a}")`
+    );
+  }
+}
+
+// A "definite, maybe alternative" topic line is two demos: the "maybe"
+// trailing off the glove-anesthesia line becomes its own tentative section.
+const demoSections = metaPlan.sections.filter((s) => /demo|anesthesia|nose|itch|nocebo/i.test(`${s.heading} ${s.body}`));
+assert.equal(demoSections.length, 2, `comma-maybe should split into definite + tentative demos (got ${demoSections.length}: ${demoSections.map((s) => s.heading).join(" | ")})`);
+assert.ok(!/maybe/i.test(demoSections[0].heading), `definite demo heading must not trail off (got "${demoSections[0].heading}")`);
+const maybeCue = demoSections[1].cues.find((c) => c.type === "content" || c.type === "open");
+assert.ok(maybeCue && /^Maybe:/.test(maybeCue.text), `tentative demo cue should say Maybe first (got "${maybeCue?.text}")`);
+
 assert.throws(() => generateCuePlan({ notesText: "   " }), /No notes text given/);
 
 console.log("test-generate: OK —", plan.sections.length, "sections,", allCues.length, "cues, total", total, "s; free-form prose, bullet + numbered outlines, paste-blob all accepted");

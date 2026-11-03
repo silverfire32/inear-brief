@@ -29,4 +29,24 @@ assert.equal(loc.sectionIndex, 2, `expected section 2, got ${loc.sectionIndex}`)
 loc = matcher.observe(a1);
 assert.equal(loc.sectionIndex, 2, "position must never move backwards");
 
-console.log("test-matcher: OK — anchors located sections 0 and 2, monotonic, noise-tolerant");
+// Fuzzy matching: paraphrase and morphology must match, not just exact
+// words — the speaker never memorizes the anchors.
+const fuzzyPlan = {
+  sections: [
+    { id: "s1", anchors: ["what is hypnosis"] },
+    { id: "s2", anchors: ["demo glove anesthesia"] },
+    { id: "s3", anchors: ["nose itch nocebo"] },
+  ],
+};
+const fuzzy = createMatcher(fuzzyPlan);
+loc = fuzzy.observe("now i'm going to demonstrate a glove anesthesia technique");
+assert.equal(loc.sectionIndex, 1, `paraphrase should locate section 1, got ${loc.sectionIndex}`);
+assert.ok(loc.confidence >= 0.7);
+loc = fuzzy.observe("your nose itches from the nocebo effect");
+assert.equal(loc.sectionIndex, 2, `plural form should locate section 2, got ${loc.sectionIndex}`);
+
+// Unrelated speech must not move position.
+loc = fuzzy.observe("let's talk about parking regulations downtown");
+assert.equal(loc.sectionIndex, 2, "unrelated speech must not move position");
+
+console.log("test-matcher: OK — anchors located sections 0 and 2, monotonic, noise-tolerant, fuzzy");

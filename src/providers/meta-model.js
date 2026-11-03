@@ -110,7 +110,7 @@ export function buildRequestBody({ notesText, paceWpm, targetMinutes, model, sch
         role: "system",
         content:
           "You turn a speaker's notes into a timed cue plan for an in-ear prompting app. " +
-          "Return only JSON matching the supplied cue-plan schema. Rules: split the notes into clean " +
+          "Return only JSON matching the supplied cue-plan schema. Rules: treat speaker meta-discourse (a 'cover:'-style lead-in; 'don't spend', 'take time', 'make sure' instructions) as staging guidance, never as section headings, anchor phrases, or cue text; an 'X, maybe Y' line is two sections (definite X, tentative Y); when topics are listed line by line after such a lead-in, make each topic its own section headed by the topic itself; split the notes into clean " +
           "sections in order; estimate section durations at the given speaking pace so they sum to the " +
           "talk's target length; write cues of at most 6 words each (they are spoken in one ear while the " +
           "speaker is talking); give each section 2-3 distinctive anchor phrases — exact phrases the speaker " +
