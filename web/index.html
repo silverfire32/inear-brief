@@ -12,7 +12,7 @@
   .cue.fired { border-color: #2a9d3a; color: #111; background: #eefbef; }
   .cue.queued { border-color: #e6a100; background: #fff7dd; color: #111; }
   .cue.dropped { opacity: .45; text-decoration: line-through; }
-  .cue.next { border-color: #e6a100; }
+
   .section { margin-top: 1.2rem; }
   .section h3 { margin-bottom: .2rem; }
   .current { outline: 2px solid #e6a100; border-radius: .4rem; padding: .2rem .6rem; }
@@ -49,6 +49,8 @@ without a recording.</p>
 </div>
 
 <p>…or load a cue plan JSON: <input type="file" id="file" accept="application/json"></p>
+<p>…or load pre-generated cue audio for your plan (the folder written by <code>src/generate-audio.js</code>): <input type="file" id="audioDir" webkitdirectory></p>
+<p id="audioNote"></p>
 <div id="planInfo"></div>
 <div id="clock">0:00</div>
 <p>
@@ -57,8 +59,6 @@ without a recording.</p>
 </p>
 <p id="notice"></p>
 <p id="deliveryNote"></p>
-<div id="sections"></div>
-
 <div class="section">
   <h3>Simulated tracking (stretch goal)</h3>
   <p>Paste what the “speaker” just said. If an anchor phrase from a later
@@ -66,6 +66,8 @@ without a recording.</p>
   matcher will do live.</p>
   <textarea id="heard" rows="2" placeholder="e.g. playtest one players spawned alone and churn went up"></textarea>
   <p><button id="hearBtn" disabled>🎧 Hear this</button></p>
+  <p><button id="micBtn" disabled>🎤 Listen live</button> <span id="micState"></span></p>
+  <p id="liveHeard"></p>
   <h3>Pause-aware delivery</h3>
   <p>Cues prefer to land in a <strong>pause</strong> in the speaker's
   speech rather than talking over them: a cue that comes due while the
@@ -78,6 +80,9 @@ without a recording.</p>
     <button id="pauseBtn">🤫 Speaker pauses</button>
   </p>
 </div>
+
+<div id="sections"></div>
+
 
 <script>
 window.__inearReady = false;
@@ -97,6 +102,7 @@ let plan = null, matcher = null;
 let gate = createCueGate(); // pause-aware delivery: cues wait for a gap
 let fired = new Set(), startedAt = null, offset = 0, timer = null;
 
+
 const $ = (id) => document.getElementById(id);
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -114,6 +120,7 @@ function render() {
     </div>`).join("");
   $("startBtn").disabled = false;
   $("hearBtn").disabled = false;
+  $("micBtn").disabled = false;
 }
 
 function speak(text) {
@@ -131,7 +138,7 @@ const cueKey = (atSecond, text) => `${atSecond}|${text}`;
 function playCue(cue) {
   const file = audioByCue.get(cueKey(cue.atSecond, cue.text));
   if (!file) return speak(cue.text);
-  const audio = new Audio(`../examples/audio/${file}`);
+  const audio = new Audio(file);
   audio.play().catch(() => speak(cue.text));
 }
 
@@ -296,6 +303,98 @@ $("genBtn").onclick = () => {
   render();
 };
 
+// Optional: pre-generated cue audio for YOUR plan. Pick the folder written
+// by src/generate-audio.js (manifest.json + cue-NN.mp3); each file plays
+// from a local object URL, nothing is uploaded.
+$("audioDir").onchange = async (e) => {
+  const files = [...e.target.files];
+  const manifestFile = files.find((f) => f.name === "manifest.json");
+  if (!manifestFile) {
+    $("audioNote").textContent = "No manifest.json in that folder — pick the output folder from src/generate-audio.js.";
+    return;
+  }
+  const manifest = JSON.parse(await manifestFile.text());
+  const byName = new Map(files.map((f) => [f.name, f]));
+  audioByCue = new Map();
+  for (const c of manifest.cues || []) {
+    const f = byName.get(c.file);
+    if (f) audioByCue.set(cueKey(c.atSecond, c.text), URL.createObjectURL(f));
+  }
+  $("audioNote").textContent = audioByCue.size
+    ? `Loaded ${audioByCue.size} recordings (voice ${manifest.voiceId}, ${manifest.speed}x). Cues without a recording still use speech synthesis.`
+    : "Manifest found, but no matching audio files in that folder.";
+};
+
+// Live microphone (Windows default input; desktop Chrome/Edge): final
+// transcripts feed the same matcher path as the paste box above, so a
+// fuzzy anchor hit re-anchors the schedule mid-talk.
+let rec = null, listening = false, netRetries = 0, retryTimer = null, micFinals = 0;
+$("micBtn").onclick = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    $("liveHeard").textContent = "Live recognition needs desktop Chrome or Edge — the paste box above works everywhere.";
+    return;
+  }
+  if (listening) {
+    listening = false;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    try { rec.stop(); } catch {}
+    $("micBtn").textContent = "🎤 Listen live";
+    $("micState").textContent = "";
+    return;
+  }
+  rec = new SR();
+  rec.continuous = true;
+  rec.lang = "en-US";
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      gate.noteSpeech({ atSec: elapsed(), durationSec: 1.5 });
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        $("heard").value = t;
+        netRetries = 0;
+        micFinals++;
+        $("hearBtn").click();
+        $("liveHeard").textContent = `Final #${micFinals}: "${t}" -> ${$("notice").textContent}`;
+      } else interim += t;
+    }
+    if (interim) $("liveHeard").textContent = "Hearing: " + interim;
+  };
+  rec.onerror = (e) => {
+    if (e.error === "network") {
+      netRetries++;
+      if (netRetries <= 3) {
+        $("liveHeard").textContent = `Recognition connection dropped — retrying (${netRetries}/3)…`;
+        retryTimer = setTimeout(() => { retryTimer = null; if (listening) { try { rec.start(); } catch {} } }, 2000);
+        return;
+      }
+      listening = false;
+      try { rec.stop(); } catch {}
+      $("micBtn").textContent = "🎤 Listen live";
+      $("micState").textContent = "";
+      $("liveHeard").textContent = "Recognition lost its network connection — Chrome streams mic audio to Google's servers, so this fires even on good wifi when that call is blocked. Try Microsoft Edge (different speech servers), a Chrome window with extensions off, or VPN/ad-blocker paused. Staying on the time schedule.";
+      return;
+    }
+    $("liveHeard").textContent = e.error === "not-allowed" || e.error === "service-not-allowed"
+      ? "Mic blocked — allow microphone access in the browser and try again."
+      : `Recognition hiccup (${e.error}) — staying on the time schedule.`;
+  };
+  rec.onend = () => { if (listening && !retryTimer) { try { rec.start(); } catch {} } };
+  try {
+    rec.start();
+  } catch {
+    $("liveHeard").textContent = "Couldn't start listening — is the mic in use by another app?";
+    return;
+  }
+  netRetries = 0;
+  micFinals = 0;
+  listening = true;
+  $("micBtn").textContent = "⏹ Stop listening";
+  $("micState").textContent = "listening on the default mic…";
+};
+
 // Try the bundled sample when served over http(s).
 try {
   const res = await fetch("../examples/sample-cue-plan.json");
@@ -311,7 +410,7 @@ try {
   const res = await fetch("../examples/audio/manifest.json");
   if (res.ok) {
     const manifest = await res.json();
-    audioByCue = new Map(manifest.cues.map((c) => [cueKey(c.atSecond, c.text), c.file]));
+    audioByCue = new Map(manifest.cues.map((c) => [cueKey(c.atSecond, c.text), `../examples/audio/${c.file}`]));
   }
 } catch { /* no recordings yet — speech synthesis fallback covers every cue */ }
 
@@ -319,3 +418,4 @@ window.__inearReady = true;
 </script>
 </body>
 </html>
+

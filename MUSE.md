@@ -50,7 +50,7 @@ video. Native iOS/Android is post-hackathon scope.
 4. **Never print, log, or commit API keys.** `.env` stays gitignored.
    If a command would echo a key, stop and say so instead.
 
-## Current state (2026-11-02)
+## Current state (2026-11-03)
 
 - Implemented and tested: local generator (any-format input), Meta
   provider (mock-tested end to end), Grok TTS provider (mock-tested),
@@ -60,11 +60,11 @@ video. Native iOS/Android is post-hackathon scope.
 - `npm test` runs six suites and must stay green.
 - **Verified live (2026-11-03)**: the Meta call with Joshua's real key
   and his own notes, end to end on his machine.
-- **Not yet done**: no Grok audio generated (needs `XAI_API_KEY` +
-  `node src/generate-audio.js examples/sample-cue-plan.json examples/audio`);
-  live microphone anchor tracking (the web runner's tracking panel and
-  its speech-activity feed are simulations); other TTS providers
-  beyond the registry stub.
+- **Also verified live (2026-11-03)**: Grok TTS audio rendered with
+  Joshua's key and played back in the runner; live microphone tracking
+  via desktop speech recognition feeding the fuzzy matcher and the
+  delivery gate (paste box remains as fallback/simulator).
+- **Not yet done**: other TTS providers beyond the registry stub.
 
 ## Working agreements
 

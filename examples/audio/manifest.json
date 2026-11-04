@@ -1,0 +1,107 @@
+{
+  "title": "Why Virtual Worlds Need Real Lobbies",
+  "provider": "grok",
+  "voiceId": "eve",
+  "speed": 0.92,
+  "language": "en",
+  "cueCount": 12,
+  "totalCharacters": 310,
+  "cues": [
+    {
+      "index": 1,
+      "sectionId": "s1",
+      "atSecond": 0,
+      "type": "open",
+      "text": "Begin: empty world problem",
+      "file": "cue-01.mp3"
+    },
+    {
+      "index": 2,
+      "sectionId": "s1",
+      "atSecond": 122,
+      "type": "wrap",
+      "text": "Wrap up: empty world problem",
+      "file": "cue-02.mp3"
+    },
+    {
+      "index": 3,
+      "sectionId": "s2",
+      "atSecond": 152,
+      "type": "content",
+      "text": "Next: lobby actually does",
+      "file": "cue-03.mp3"
+    },
+    {
+      "index": 4,
+      "sectionId": "s2",
+      "atSecond": 303,
+      "type": "wrap",
+      "text": "Wrap up: lobby actually does",
+      "file": "cue-04.mp3"
+    },
+    {
+      "index": 5,
+      "sectionId": "s3",
+      "atSecond": 341,
+      "type": "content",
+      "text": "Next: Lessons playtests",
+      "file": "cue-05.mp3"
+    },
+    {
+      "index": 6,
+      "sectionId": "s3",
+      "atSecond": 432,
+      "type": "wrap",
+      "text": "Wrap up: Lessons playtests",
+      "file": "cue-06.mp3"
+    },
+    {
+      "index": 7,
+      "sectionId": "s4",
+      "atSecond": 455,
+      "type": "content",
+      "text": "Next: Design rules now follow",
+      "file": "cue-07.mp3"
+    },
+    {
+      "index": 8,
+      "sectionId": "s4",
+      "atSecond": 573,
+      "type": "wrap",
+      "text": "Wrap up: Design rules now follow",
+      "file": "cue-08.mp3"
+    },
+    {
+      "index": 9,
+      "sectionId": "s4",
+      "atSecond": 600,
+      "type": "time",
+      "text": "Two minutes left",
+      "file": "cue-09.mp3"
+    },
+    {
+      "index": 10,
+      "sectionId": "s5",
+      "atSecond": 603,
+      "type": "content",
+      "text": "Next: build doorway first",
+      "file": "cue-10.mp3"
+    },
+    {
+      "index": 11,
+      "sectionId": "s5",
+      "atSecond": 690,
+      "type": "close",
+      "text": "Thirty seconds — land it",
+      "file": "cue-11.mp3"
+    },
+    {
+      "index": 12,
+      "sectionId": "s5",
+      "atSecond": 697,
+      "type": "wrap",
+      "text": "Wrap up: build doorway first",
+      "file": "cue-12.mp3"
+    }
+  ]
+}

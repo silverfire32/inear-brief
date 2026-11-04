@@ -7,3 +7,6 @@ test-notes.txt
 my-notes.txt
 my-plan.json
 test-plan.json
+# Personal cue-audio renders stay local (the sample set in
+# examples/audio/ is committed so the demo works out of the box).
+my-audio/

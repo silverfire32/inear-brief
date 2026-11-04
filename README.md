@@ -139,6 +139,11 @@ Pre-generate cue audio (natural voice, Fix 2):
 export XAI_API_KEY=...
 node src/generate-audio.js examples/sample-cue-plan.json examples/audio
 # options: --provider grok --voice eve|ara|rex|sal|leo --speed 0.92 --lang en
+#
+# Sample speech: its cue audio ships in examples/audio/, which the
+# runner loads on its own — no picker needed. Regenerate it with the
+# command above if the sample plan changes. Your own plans go in any
+# other folder and load through the page's audio-folder picker.
 ```
 
 ## Voice design
